@@ -1,0 +1,97 @@
+#!/bin/bash
+set -e
+
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+NC='\033[0m'
+
+# Check the syntax for ruby
+rubysyntax () {
+    git diff --cached --name-only | while read FILE; do
+        if [[ "$FILE" =~ ^.+(rb|spec)$ ]]; then
+            if [[ -f $FILE ]]; then
+                ruby -c "$FILE" 1> /dev/null
+                if [ $? -ne 0 ]; then
+                    echo -e "${red} [FATAL]: Aborting commit due to files with syntax errors ${NC}" >&2
+                    exit 1
+                fi
+            fi
+        fi
+    done
+}
+
+# Run your specs
+runspecs () {
+    git diff --cached --name-only | while read FILE; do
+        if [[ "$FILE" =~ ^.+(rb|spec)$ ]]; then
+            if [[ -f $FILE ]]; then
+                bundle exec rake spec 1> /dev/null
+                if [ $? -ne 0 ]; then
+                    echo -e "${red} [FATAL]: Aborting commit due to spec failures ${NC}" >&2
+                    exit 1
+                fi
+            fi
+        fi
+    done
+}
+
+# Make sure you don't have any binding.pry left
+bindingpry() {
+    git diff --cached --name-only | while read FILE; do
+        if [[ "$FILE" =~ ^.+(rb|spec)$ ]]; then
+            RESULT=$(grep "binding.pry" "$FILE")
+            if [ ! -z $RESULT ]; then
+                echo -e "${red} [FATAL]: the commit contains at least one binding.pry ${NC}" >&2
+            fi
+        fi
+    done
+}
+
+# Foodritic is good
+foodcritic() {
+    if `grep 'foodcritic' Gemfile`; then
+        git diff --cached --name-only | while read FILE; do
+            if [[ "$FILE" =~ ^.+(rb|spec)$ ]]; then
+                if [[ -f $FILE ]]; then
+                    bundle exec foodcritic . 1> /dev/null
+                    if [ $? -ne 0 ]; then
+                        echo -e "${red} [FATAL]: Aborting commit due to foodcritic failures. ${NC}" >&2
+                        exit 1
+                    fi
+                fi
+            fi
+        done
+    else
+        echo -e "${yellow} [WARNING]: No foodcritic so I'm skipping it, you should comment it out. ${NC}"
+    fi
+}
+
+# rubocop is better
+rubocop() {
+    if `grep 'rubocop' Gemfile`; then
+        git diff --cached --name-only | while read FILE; do
+            if [[ "$FILE" =~ ^.+(rb|spec)$ ]]; then
+                if [[ -f $FILE ]]; then
+                    bundle exec rubocop . 1> /dev/null
+                    if [ $? -ne 0 ]; then
+                        echo -e "${red} [FATAL]: Aborting commit due to rubocop failures. ${NC}" >&2
+                        exit 1
+                    fi
+                fi
+            fi
+        done
+    else
+        echo -e "${yellow} [WARNING]: No rubocop so I'm skipping it, you should comment it out. ${NC}"
+    fi
+}
+
+#
+# Go ahead and comment out the fuctions you don't think you need.
+#
+
+bindingpry
+rubysyntax
+runspecs
+foodcritic
+rubocop
